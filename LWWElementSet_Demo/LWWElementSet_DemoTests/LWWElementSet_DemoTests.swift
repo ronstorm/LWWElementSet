@@ -59,22 +59,149 @@ final class LWWElementSet_DemoTests: XCTestCase {
     
     /// Tests the merging of two different sets.
     func testMerge() {
-        // Initialize two different sets
-        let set1 = LWWElementSet<Int>()
-        let set2 = LWWElementSet<Int>()
-
-        // Add elements to both sets
-        let timestamp1 = Timestamp(replicaID: "A", counter: 1)
-        let timestamp2 = Timestamp(replicaID: "B", counter: 1)
+        let group = DispatchGroup()
         
-        set1.add(element: 1, timestamp: timestamp1)
-        set2.add(element: 2, timestamp: timestamp2)
-
-        // Merge the two sets
-        set1.merge(with: set2)
-
-        // Assert that elements from both sets are present after the merge
-        XCTAssertTrue(set1.contains(element: 1))
-        XCTAssertTrue(set1.contains(element: 2))
+        let setA = LWWElementSet<String>()
+        let setB = LWWElementSet<String>()
+        
+        let element1 = "apple"
+        let element2 = "banana"
+        
+        let timestamp1 = Timestamp(replicaID: "A", counter: 1)
+        let timestamp2 = Timestamp(replicaID: "B", counter: 2)
+        
+        // Initially add elements
+        setA.add(element: element1, timestamp: timestamp1)
+        setB.add(element: element2, timestamp: timestamp2)
+        
+        var mergedSet = LWWElementSet<String>()
+        
+        // Merge A and B into a new set
+        group.enter()
+        DispatchQueue.global().async {
+            mergedSet = setA
+            mergedSet.merge(with: setB)
+            group.leave()
+        }
+        
+        // Wait for merges to complete
+        group.wait()
+        
+        // Check if the merged set contains elements from both sets
+        XCTAssertTrue(mergedSet.contains(element: element1), "Merged set should contain element from setA")
+        XCTAssertTrue(mergedSet.contains(element: element2), "Merged set should contain element from setB")
+    }
+    
+    // Test for Commutativity: A merged with B should equal B merged with A
+    func testCommutativity() {
+        let group = DispatchGroup()
+        
+        let setA = LWWElementSet<String>()
+        let setB = LWWElementSet<String>()
+        
+        let element1 = "apple"
+        let element2 = "banana"
+        
+        let timestamp1 = Timestamp(replicaID: "A", counter: 1)
+        let timestamp2 = Timestamp(replicaID: "B", counter: 2)
+        
+        // Initially add elements
+        setA.add(element: element1, timestamp: timestamp1)
+        setB.add(element: element2, timestamp: timestamp2)
+        
+        var setAB = LWWElementSet<String>()
+        var setBA = LWWElementSet<String>()
+        
+        // Merge A into B
+        group.enter()
+        DispatchQueue.global().async {
+            setAB = setA
+            setAB.merge(with: setB)
+            group.leave()
+        }
+        
+        // Merge B into A
+        group.enter()
+        DispatchQueue.global().async {
+            setBA = setB
+            setBA.merge(with: setA)
+            group.leave()
+        }
+        
+        // Wait for merges to complete
+        group.wait()
+        
+        // Now, setAB should be equal to setBA if the merge operation is commutative
+        XCTAssertTrue(setAB.elements() == setBA.elements(), "Merge operation is not commutative")
+    }
+    
+    // Test for Associativity: (A merged with B) merged with C should equal A merged with (B merged with C)
+    func testAssociativity() {
+        let group = DispatchGroup()
+        
+        let setA = LWWElementSet<String>()
+        let setB = LWWElementSet<String>()
+        let setC = LWWElementSet<String>()
+        
+        let element1 = "apple"
+        let element2 = "banana"
+        let element3 = "cherry"
+        
+        let timestamp1 = Timestamp(replicaID: "A", counter: 1)
+        let timestamp2 = Timestamp(replicaID: "B", counter: 2)
+        let timestamp3 = Timestamp(replicaID: "C", counter: 3)
+        
+        // Initially add elements
+        setA.add(element: element1, timestamp: timestamp1)
+        setB.add(element: element2, timestamp: timestamp2)
+        setC.add(element: element3, timestamp: timestamp3)
+        
+        var setAB = LWWElementSet<String>()
+        var setBC = LWWElementSet<String>()
+        
+        // Merge A and B
+        group.enter()
+        DispatchQueue.global().async {
+            setAB = setA
+            setAB.merge(with: setB)
+            group.leave()
+        }
+        
+        // Merge B and C
+        group.enter()
+        DispatchQueue.global().async {
+            setBC = setB
+            setBC.merge(with: setC)
+            group.leave()
+        }
+        
+        // Wait for merges to complete
+        group.wait()
+        
+        // Now merge (A merged with B) with C
+        let setABC1 = setAB
+        setABC1.merge(with: setC)
+        
+        // And also merge A with (B merged with C)
+        let setABC2 = setA
+        setABC2.merge(with: setBC)
+        
+        // Now, setABC1 should be equal to setABC2 if the merge operation is associative
+        XCTAssertTrue(setABC1.elements() == setABC2.elements(), "Merge operation is not associative")
+    }
+    
+    
+    // Test for Idempotence: Merging a set with itself should not change the set
+    func testIdempotence() {
+        let setA = LWWElementSet<String>()
+        
+        setA.add(element: "apple", timestamp: Timestamp(replicaID: "A", counter: 1))
+        let elementsBefore = setA.elements()
+        
+        setA.merge(with: setA)
+        
+        let elementsAfter = setA.elements()
+        
+        XCTAssertEqual(elementsBefore, elementsAfter)
     }
 }
